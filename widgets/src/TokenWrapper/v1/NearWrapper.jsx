@@ -1,66 +1,32 @@
 const ownerId = "manzanal.near";
 const accountId = context.accountId;
-
-const getTokenBalance = (accountId, updateStateCallback) => {
-  const account = fetch("https://rpc.mainnet.near.org", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: "dontcare",
-      method: "query",
-      params: {
-        request_type: "view_account",
-        finality: "final",
-        account_id: accountId,
-      },
-    }),
-  });
-  const { amount, storage_usage } = account.body.result;
-  if (!amount) return "-";
-  const availableBalance = Big(amount || 0).minus(
-    Big(storage_usage).mul(Big(10).pow(19))
-  );
-  const balance = availableBalance.div(Big(10).pow(24)).minus(0.005);
-  const result = balance.lt(0) ? "0" : balance.toFixed(5, 0);
-  updateStateCallback(result);
-  return result;
-};
-
-const parseToUnits = (amount) => {
-  let by1e6 = Math.round(Number(amount) * 1e6).toString();
-  let yoctosText = by1e6 + "0".repeat(24 - 6);
-  return yoctosText;
-};
-
-const formatUnitsFn = (amount) => {
-  if (!amount) return 0;
-  if (amount.indexOf(".") !== -1) return null;
-  const token_decimals = 24;
-  const decimals = 5;
-  let negative = false;
-  if (amount.startsWith("-")) {
-    negative = true;
-    amount = amount.slice(1);
-  }
-  let padded = amount.padStart(token_decimals + 1, "0");
-  const decimalPointPosition = -token_decimals + decimals;
-  let nearsText =
-    padded.slice(0, -token_decimals) +
-    "." +
-    padded.slice(-token_decimals, decimalPointPosition);
-  return Number(nearsText) * (negative ? -1 : 1);
-};
-const isValidAmout = (amount) => {
-  if (!amount) return false;
-  if (isNaN(Number(amount))) return false;
-  if (amount === "") return false;
-  if (amount < 0) return false;
-  return true;
-};
-
+const tokenName = "NEAR";
+const wrapTokenName = "WNEAR";
+const wnearContract = "wrap.near";
+const wrapMethod = "near_deposit";
+const unwrapMethod = "near_withdraw";
+const YOCTO = 1000000000000000000000000;
+const GAS = "200000000000000";
+const NEAR_DECIMALS = 24;
+const BIG_ROUND_DOWN = 0;
+const imgWrapTokenSvg = (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    version="1.0"
+    width="32"
+    height="32"
+    viewBox="0 0 52.000000 52.000000"
+    preserveAspectRatio="xMidYMid meet"
+  >
+    <g
+      transform="translate(0.000000,52.000000) scale(0.100000,-0.100000)"
+      fill="#000000"
+      stroke="none"
+    >
+      <path d="M190 511 c-46 -15 -85 -39 -116 -73 -54 -57 -69 -95 -69 -178 0 -83 15 -121 69 -178 53 -57 101 -77 186 -77 57 0 84 5 115 22 47 25 95 74 121 123 26 49 26 171 0 220 -26 49 -74 98 -121 122 -43 22 -144 33 -185 19z m80 -211 l120 -80 0 -41 c0 -22 -4 -39 -9 -37 -5 2 -63 37 -129 78 l-121 75 -1 43 c0 23 5 42 10 42 6 0 64 -36 130 -80z m120 20 c0 -33 -3 -60 -6 -60 -12 0 -84 44 -84 51 0 8 72 68 83 69 4 0 7 -27 7 -60z m-210 -82 c22 -13 40 -26 40 -29 0 -7 -76 -69 -84 -69 -3 0 -6 27 -6 60 0 33 2 60 6 60 3 0 23 -10 44 -22z" />
+    </g>
+  </svg>
+);
 const imgTokenSvg = (
   <svg
     width="32"
@@ -88,369 +54,112 @@ const imgTokenSvg = (
     </defs>
   </svg>
 );
-const imgWrapTokenSvg = imgTokenSvg;
 
-State.init({
-  unwrap: false,
-  balanceToken: null,
-  balanceWrapToken: null,
-  intervalStarted: false,
-  amountIn: null,
-  amountOut: null,
-  swapButtonText: null,
-  swapReady: false,
-});
+const parseToUnitsFn = (amount) => {
+  let by1e6 = Math.round(Number(amount) * 1e6).toString();
+  let yoctosText = by1e6 + "0".repeat(NEAR_DECIMALS - 6);
+  return yoctosText;
+};
 
-const updateBalances = (account_id) => {
-  if (!account_id) return;
-  getTokenBalance(account_id, (balance) =>
-    State.update({
-      balanceToken: balance,
-    })
+const formatUnitsFn = (amount) => {
+  if (!amount) return 0;
+  if (amount.indexOf(".") !== -1) {
+    console.log("a yocto string can't have a decimal point: " + amount);
+    return null;
+  }
+  const token_decimals = NEAR_DECIMALS;
+  const decimals = 5;
+  let negative = false;
+  if (amount.startsWith("-")) {
+    negative = true;
+    amount = amount.slice(1);
+  }
+  let padded = amount.padStart(token_decimals + 1, "0");
+  const decimalPointPosition = -token_decimals + decimals;
+  let nearsText =
+    padded.slice(0, -token_decimals) +
+    "." +
+    padded.slice(-token_decimals, decimalPointPosition);
+  return Number(nearsText) * (negative ? -1 : 1);
+};
+const isValidAmountFn = (amount) => {
+  if (!amount) return false;
+  if (isNaN(Number(amount))) return false;
+  if (amount === "") return false;
+  if (amount < 0) return false;
+  return true;
+};
+const isSignedIn = () => !!context.accountId;
+const getNearBalance = (accountId, updateStateCallback) => {
+  const account = fetch("https://rpc.mainnet.near.org", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "dontcare",
+      method: "query",
+      params: {
+        request_type: "view_account",
+        finality: "final",
+        account_id: accountId,
+      },
+    }),
+  });
+  const { amount, storage_usage } = account.body.result;
+  const COMMON_MIN_BALANCE = 0.005;
+  if (!amount) return "-";
+  const availableBalance = Big(amount || 0).minus(
+    Big(storage_usage).mul(Big(10).pow(19))
   );
+  const balance = availableBalance
+    .div(Big(10).pow(NEAR_DECIMALS))
+    .minus(COMMON_MIN_BALANCE);
+  const result = balance.lt(0) ? "0" : balance.toFixed(5, BIG_ROUND_DOWN);
+  updateStateCallback(result);
+  return result;
+};
 
-  const balanceAmount = Near.view("wrap.near", "ft_balance_of", {
+const getWnearBalance = (account_id, updateStateCallback) => {
+  const balanceAmount = Near.view(wnearContract, "ft_balance_of", {
     account_id,
   });
-  State.update({
-    balanceWrapToken: formatUnitsFn(balanceAmount),
-  });
+  const result = formatUnitsFn(balanceAmount);
+  updateStateCallback(result);
+  return result;
 };
-
-if (!state.intervalStarted) {
-  State.update({ intervalStarted: true });
-  updateBalances(accountId);
-
-  setInterval(() => {
-    updateBalances(accountId);
-  }, 2000);
-}
-
-const updateSwapButton = () => {
-  State.update({ swapReady: false });
-  if (!context.accountId()) {
-    State.update({ swapButtonText: "Connect Wallet" });
-    return;
-  }
-  if (!state.amountIn) {
-    return;
-  }
-  if (!isValidAmout(state.amountIn)) {
-    State.update({ swapButtonText: "Invalid Amount" });
-    return;
-  }
-
-  let limit = state.unwrap ? state.balanceWrapToken : state.balanceToken;
-
-  if (limit && amountIn < limit) {
-    State.update({
-      swapButtonText: state.unwrap ? `Unwrap NEAR` : `Wrap NEAR`,
-      swapReady: true,
-    });
-  } else {
-    State.update({
-      swapButtonText: `Insufficient ${state.unwrap ? "WNEAR" : "NEAR"} Balance`,
-    });
-  }
+const wrapFn = (amount) => {
+  return Near.call(wnearContract, wrapMethod, {}, GAS, parseToUnitsFn(amount));
 };
-
-const swapInputOnChange = (event) => {
-  let re = /^[0-9]*[.,]?[0-9]*$/;
-  if (re.test(event.target.value)) {
-    State.update({
-      amountIn: event.target.value,
-      amountOut: event.target.value,
-      swapButtonText: null,
-    });
-
-    updateSwapButton();
-  }
-};
-
-const swapButtonOnClick = () => {
-  Near.call(
-    "wrap.near",
-    state.unwrap ? "near_withdraw" : "near_deposit",
+const unwrapFn = (amount) => {
+  return Near.call(
+    wnearContract,
+    unwrapMethod,
     {
-      amount: state.unwrap ? parseToUnitsFn(state.amountIn) : null,
+      amount: parseToUnitsFn(amount),
     },
-    "200000000000000",
-    state.unwrap ? 1 : parseToUnitsFn(state.amountIn)
+    GAS,
+    1
   );
 };
 
-const Card = styled.div`
-  font-family: 'Inter custom',sans-serif;
-  font-size: 16px;
-  font-variant: none;
-  -webkit-font-smoothing: antialiased;
-  -webkit-tap-highlight-color: transparent;
-  color: rgb(255, 255, 255);
-  box-sizing: border-box;
-  background: rgb(13, 17, 28);
-  border-radius: 16px;
-  border: 1px solid rgb(27, 34, 54);
-  padding: 8px;
-  z-index: 1;
-  transition: transform 250ms ease 0s;
-  display: block;
-`;
-
-const SwapContainer = styled.div`
-  background-color: rgb(19, 26, 42);
-  border-radius: 12px;
-  padding: 16px;
-`;
-
-const SwapContainerOuter = styled.div`
-  display: flex;
-  flex-flow: column nowrap;
-  border-radius: 20px;
-`;
-
-const SwapContainerInner = styled.div`
-  border-radius: 20px;
-`;
-
-const InputContainer = styled.div`
-  display: flex;
-  align-items: center;
-`;
-
-const SwapInput = styled.input`
-  color: rgb(255, 255, 255);
-  position: relative;
-  font-weight: 400;
-  outline: none;
-  border: none;
-  flex: 1 1 auto;
-  background-color: transparent;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 0px;
-  appearance: textfield;
-  filter: none;
-  opacity: 1;
-  transition: opacity 0.2s ease-in-out 0s;
-  text-align: left;
-  font-size: 36px;
-  line-height: 44px;
-  font-variant: small-caps;
-`;
-
-const SwapArrowContainer = styled.div`
-  border-radius: 12px;
-  height: 40px;
-  width: 40px;
-  position: relative;
-  margin: -18px auto;
-  background-color: rgb(41, 50, 73);
-  border: 4px solid rgb(13, 17, 28);
-  z-index: 2;
- 
-  :hover {
-    opacity: 0.75;
-  }
-`;
-
-const SwapArrowWrapper = styled.div`
-  display: inline-flex;
-  -webkit-box-align: center;
-  align-items: center;
-  -webkit-box-pack: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  cursor: pointer;
-`;
-
-const CurrencyPillContainer = styled.div`
-  text-decoration: none;
-  background-color: rgb(41, 50, 73);
-  color: rgb(255, 255, 255);
-  border-radius: 16px;
-  padding: 4px 8px 4px 4px;
-  margin-left: 12px;
-`;
-
-const CurrencyPillWrapper = styled.div`
-  display: flex;
-  -webkit-box-align: center;
-  align-items: center;
-  -webkit-box-pack: start;
-  justify-content: flex-start;
-`;
-
-const CurrencyPillImageWrapper = styled.div`
-  display: flex;
-  align-items: center;
-`;
-
-const CurrencyPillSvgImageContainer = styled.div`
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  margin-right: 2px;
-`;
-
-const CurrencyPillText = styled.span`
-  margin: 0px 4px;
-  font-size: 20px;
-  font-weight: 600;
-`;
-
-const SwapDetailsContainer = styled.div`
-  padding: 8px 0px 0px;
-`;
-
-const SwapDetailsWrapper = styled.div`
-  display: flex;
-  gap: 10;
-  -webkit-box-align: center;
-  align-items: center;
-  -webkit-box-pack: justify;
-  justify-content: end;
-`;
-
-const TextSmall = styled.div`
-  color: rgb(152, 161, 192);
-  line-height: 1rem;
-  box-sizing: border-box;
-  font-weight: 400;
-  font-size: 14px;
-`;
-
-const SwapButtonWrapper = styled.div`
-  margin-top: 12px;
-`;
-
-const SwapButton = styled.button`
-  background-color: ${(props) =>
-    props.disabled ? "rgb(41, 50, 73)" : "#1758FE"};
-  padding: 16px;
-  font-size: 20px;
-  font-weight: 600;
-  color: rgb(245, 246, 252);
-  width: 100%;
-  text-align: center;
-  border-radius: 20px;
-  outline: none;
-  border: 1px solid transparent;
-  text-decoration: none;
-  position: relative;
-  z-index: 1;
-  cursor: pointer;
-`;
-
-const TitleWrapper = styled.div`
-  padding: 8px 12px;
-  margin: 0px 0px 8px 0px;
-  color: rgb(255, 255, 255);
-  font-weight: 500;
-  font-size: 16px;
-`;
-
-const Wrapper = styled.div`
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 32px;
-    width: 100%;
-    height: 100%;
-    justify-content: center;
-  `;
-
-const renderSwapContainer = (
-  state,
-  showTokenSvg,
-  showTokenName,
-  swapInputOnChange,
-  isWrapRender
-) => (
-  <SwapContainer>
-    <SwapContainerOuter>
-      <SwapContainerInner>
-        <InputContainer>
-          <SwapInput
-            inputmode="decimal"
-            autocomplete="off"
-            autocorrect="off"
-            type="text"
-            placeholder="0"
-            minLength="1"
-            maxLength="79"
-            value={state.amountIn}
-            onChange={swapInputOnChange}
-          />
-          <CurrencyPillContainer>
-            <CurrencyPillWrapper>
-              <CurrencyPillImageWrapper>
-                <CurrencyPillSvgImageContainer>
-                  {showTokenSvg()}
-                </CurrencyPillSvgImageContainer>
-                <CurrencyPillText>{showTokenName()}</CurrencyPillText>
-              </CurrencyPillImageWrapper>
-            </CurrencyPillWrapper>
-          </CurrencyPillContainer>
-        </InputContainer>
-        <SwapDetailsContainer>
-          <SwapDetailsWrapper>
-            {
-              <TextSmall>
-                Balance:
-                {isWrapRender
-                  ? state.balanceWrapToken || 0
-                  : state.balanceToken || 0}
-              </TextSmall>
-            }
-          </SwapDetailsWrapper>
-        </SwapDetailsContainer>
-      </SwapContainerInner>
-    </SwapContainerOuter>
-  </SwapContainer>
-);
-
 return (
-  <Wrapper>
-    <Card>
-      <TitleWrapper>
-        <p style={{ margin: 0 }}>NEAR/WNEAR Wrapper</p>
-      </TitleWrapper>
-      {renderSwapContainer(
-        state,
-        () => (state.unwrap ? imgWrapTokenSvg : imgTokenSvg),
-        () => (state.unwrap ? "WNEAR" : "NEAR"),
-        swapInputOnChange,
-        state.unwrap
-      )}
-      <SwapArrowContainer
-        onClick={() => {
-          State.update({
-            unwrap: !state.unwrap,
-            amountIn: state.amountOut,
-            amountOut: state.amountIn,
-          });
-          updateSwapButton();
-        }}
-      >
-        <SwapArrowWrapper>
-          <i class="bi bi-arrow-down-short" />
-        </SwapArrowWrapper>
-      </SwapArrowContainer>
-      {renderSwapContainer(
-        state,
-        () => (!state.unwrap ? imgWrapTokenSvg : imgTokenSvg),
-        () => (!state.unwrap ? "WNEAR" : "NEAR"),
-        swapInputOnChange,
-        !state.unwrap
-      )}
-      <SwapButtonWrapper>
-        <SwapButton disabled={!state.swapReady} onClick={swapButtonOnClick}>
-          {state.swapButtonText ??
-            `Enter ${state.unwrap ? "WNEAR" : "NEAR"} Amount`}
-        </SwapButton>
-      </SwapButtonWrapper>
-    </Card>
-  </Wrapper>
+  <Widget
+    src={`${ownerId}/widget/TokenWrapper.v1.AbstractWrapper`}
+    props={{
+      tokenName,
+      wrapTokenName,
+      imgTokenSvg,
+      imgWrapTokenSvg,
+      getTokenBalanceFn: getNearBalance,
+      getWrapTokenBalanceFn: getWnearBalance,
+      parseToUnitsFn,
+      formatUnitsFn,
+      isValidAmountFn,
+      wrapFn,
+      unwrapFn,
+      isSignedIn,
+    }}
+  />
 );
