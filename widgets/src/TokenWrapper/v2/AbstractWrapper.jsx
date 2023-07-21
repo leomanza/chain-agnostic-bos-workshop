@@ -211,6 +211,13 @@ const CurrencyPillImageWrapper = styled.div`
   align-items: center;
 `;
 
+const CurrencyPillSvgImageContainer = styled.div`
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  margin-right: 2px;
+`;
+
 const CurrencyPillImage = styled.img`
   color: rgb(255, 255, 255);
   width: 24px;
@@ -231,10 +238,11 @@ const SwapDetailsContainer = styled.div`
 
 const SwapDetailsWrapper = styled.div`
   display: flex;
+  gap: 10;
   -webkit-box-align: center;
   align-items: center;
   -webkit-box-pack: justify;
-  justify-content: space-between;
+  justify-content: end;
 `;
 
 const TextSmall = styled.div`
@@ -251,7 +259,7 @@ const SwapButtonWrapper = styled.div`
 
 const SwapButton = styled.button`
   background-color: ${(props) =>
-    props.disabled ? "rgb(41, 50, 73)" : "rgb(76, 130, 251)"};
+    props.disabled ? "rgb(41, 50, 73)" : "#1758FE"};
   padding: 16px;
   font-size: 20px;
   font-weight: 600;
@@ -285,6 +293,22 @@ const Wrapper = styled.div`
     justify-content: center;
   `;
 
+const MaxButton = styled.button`
+background-color: transparent;
+border: none;
+color: #1758FE;
+cursor: pointer;
+font-size: 14px;
+font-weight: 600;
+opacity: 1;
+padding: 4px 6px;
+pointer-events: initial;
+user-select: none;`;
+
+const showMaxButton =
+  (state.unwrap && Number(state.amountIn) !== Number(state.balanceWrapToken)) ||
+  (!state.unwrap && Number(state.amountIn) !== Number(state.balanceToken));
+
 return (
   <Wrapper>
     <Card>
@@ -310,7 +334,9 @@ return (
               <CurrencyPillContainer>
                 <CurrencyPillWrapper>
                   <CurrencyPillImageWrapper>
-                    {state.unwrap ? imgWrapTokenSvg : imgTokenSvg}
+                    <CurrencyPillSvgImageContainer>
+                      {state.unwrap ? imgWrapTokenSvg : imgTokenSvg}
+                    </CurrencyPillSvgImageContainer>
                     <CurrencyPillText>
                       {state.unwrap ? wrapTokenName : tokenName}
                     </CurrencyPillText>
@@ -320,13 +346,26 @@ return (
             </InputContainer>
             <SwapDetailsContainer>
               <SwapDetailsWrapper>
-                <TextSmall></TextSmall>
                 {state.unwrap ? (
                   state.balanceWrapToken ? (
                     <TextSmall>Balance: {state.balanceWrapToken}</TextSmall>
                   ) : null
                 ) : state.balanceToken ? (
                   <TextSmall>Balance: {state.balanceToken}</TextSmall>
+                ) : null}
+
+                {showMaxButton ? (
+                  <MaxButton
+                    onClick={() =>
+                      State.update({
+                        amountIn: state.unwrap
+                          ? state.balanceWrapToken
+                          : state.balanceToken,
+                      })
+                    }
+                  >
+                    Max
+                  </MaxButton>
                 ) : null}
               </SwapDetailsWrapper>
             </SwapDetailsContainer>
@@ -379,7 +418,9 @@ return (
               <CurrencyPillContainer>
                 <CurrencyPillWrapper>
                   <CurrencyPillImageWrapper>
-                    {state.unwrap ? imgTokenSvg : imgWrapTokenSvg}
+                    <CurrencyPillSvgImageContainer>
+                      {state.unwrap ? imgTokenSvg : imgWrapTokenSvg}
+                    </CurrencyPillSvgImageContainer>
                     <CurrencyPillText>
                       {state.unwrap ? tokenName : wrapTokenName}
                     </CurrencyPillText>

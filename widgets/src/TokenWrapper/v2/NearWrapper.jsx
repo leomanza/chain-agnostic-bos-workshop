@@ -146,7 +146,7 @@ const unwrapFn = (amount) => {
 
 return (
   <Widget
-    src={`${ownerId}/widget/TokenWrapper.v1.AbstractWrapper`}
+    src={`${ownerId}/widget/TokenWrapper.v2.AbstractWrapper`}
     props={{
       tokenName,
       wrapTokenName,

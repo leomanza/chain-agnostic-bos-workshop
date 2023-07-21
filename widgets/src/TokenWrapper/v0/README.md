@@ -1,5 +1,2 @@
 Initial version
-App composed by:
-1. an abstract wrapper, chain-agnostic widget with all the common logic an functionallity.
-2. a ETH/WETH wrapper implementation
-3. a NEAR/WNEAR wrapper implementation
+In this version of the app, the entire implementation for the ETH wrapper and NEAR wrapper is consolidated into a single file.
